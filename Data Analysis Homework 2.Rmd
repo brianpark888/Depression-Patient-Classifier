@@ -1,0 +1,264 @@
+---
+title: "DA homework 2 박정명"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+```{r load-packages, include=FALSE}
+library(dplyr)
+library(readr)
+library(purrr)
+library(rvest)
+library(tidyverse)
+library(stringr)
+library(tidytext)
+library(stopwords)
+library(haven)
+library(mdsr)
+```
+
+# Question 1
+## Question 1 a)
+```{r}
+df= read.csv("sample_df.csv")
+
+num_trials <- 100
+bs_s100_1 <- 1:num_trials %>%
+  map_dfr(
+    ~df %>% select(s100_1) %>%
+      slice_sample(n = 100, replace = TRUE) %>%
+      summarize(mean= mean(s100_1))
+  )
+#Find the mean and se of the resamples
+q1a=bs_s100_1 %>%
+  skim(mean) %>% 
+  select(4:5) %>% 
+  data.frame()
+
+#Since we can assume normality, it is better to use mean plus or minus 2*SE than to find quantiles as this is computationally time-consuming
+
+#Making as functions
+conf_fun= function(data){
+  ans= data.frame(p2.5= data$mean- 2*data$sd,p97.5=data$mean+2*data$sd)
+  return(ans)
+}
+conf_fun(q1a) #Final answer for question 1a)
+
+```
+
+## Question 1 b)
+```{r echo=FALSE}
+#Iterating over 1000 columns
+#df_100_bs is my sampling distribution
+df_100_bs=1:100 %>% 
+map_dfr(~df %>% slice_sample(n = 100, replace = TRUE) %>%
+          summarise_each(list(mean=mean)))
+
+
+q1b=df_100_bs %>% select(-1) %>% skim() %>% select(4,5)
+q1b_final_table= q1b %>% 
+  mutate(p2.5=mean-2*sd,p97.5=mean+2*sd) %>% 
+  mutate(contain_zero=ifelse(p2.5*p97.5<0,"Yes","No"))
+q1b_final_table %>% select(contain_zero) %>% table() %>% prop.table()
+
+```
+
+## Question 1c)
+```{r}
+
+df_nest= df %>% tibble() %>%  pivot_longer(cols= starts_with("s"), names_to= "a", values_to = "b") %>% 
+  group_by(X) %>% nest() %>% mutate(list= map(data,pull, b)) %>% 
+  select(1,3)
+
+
+test=df_nest %>% unnest(cols=c("list"))
+
+q1c_final_table=
+1:100 %>% 
+map_dfr(~test %>% slice_sample(n=1000, replace=TRUE) %>% group_by(X) %>% summarise(avg=mean(list))) %>% 
+  group_by(X) %>%  summarise(bs_mean= mean(avg), bs_std=sd(avg)) %>% 
+  mutate(p2.5= bs_mean-2*bs_std, p97.5=bs_mean+2*bs_std) %>% 
+  mutate(contain_zero= ifelse(p2.5*p97.5<=0, "Yes","No"))
+
+q1c_final_table %>% head(5)
+
+q1c_final_table %>% 
+  pluck(6) %>% table() %>% prop.table()
+
+```
+## Question 1 d)
+Both answers from 1a) and 1c) are somewhat similar. The difference may be due to the difference in sample size; 1a) has sample size of 100 and 1c) has 1000. Due to the central limit theorem, the distribution of 1c) follows a more normal distribution that does 1b) as it has a larger sample size. This may be the reason that it has a higher coverage probability, which is where the confidence interval includes 0. As a note, the samples were likely taken from a normal distribution with mean 0.
+
+## Question 1 e)
+```{r}
+ggplot(q1c_final_table,aes(y=X,x=p2.5))+
+  geom_crossbar(aes(xmin=p2.5,xmax=p97.5),width=0.3,fill="YELLOW")+
+  labs(x= "Confidence Interval", y="Sample", title="Confidence Interval of 100 resamples of the rows")+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+```
+
+
+# Question 2
+## Question 2 a)
+```{r}
+
+x <- c("one two three", "four five six", "SEVEN EIGHT")
+
+
+second_word=function(x){
+  x %>% map_chr(~word(.,2))
+}
+
+second_word(x)
+```
+
+## Question 2 b)
+```{r}
+url="https://en.wikipedia.org/wiki/Fields_Medal"
+table= url %>%
+  read_html() %>% 
+  html_nodes("table") %>% 
+  pluck(2) %>% 
+  html_table()
+
+
+cond = function(x){
+  switch(as.character(x), "his"="his", "her"="her", "other")
+}
+
+
+table %>%  pluck(6) %>% map_chr(~second_word(.)) %>% 
+  map_chr(~cond(.)) %>% 
+  table()
+```
+
+## Question 2 c)
+```{r}
+#First we need to join Year and Medalist as this forms a composite key with unique values
+table %>%
+  mutate(ID= paste(Year,`Medalists[20]`)) %>%
+  unnest_tokens(word,Reasons) %>%
+  anti_join(get_stopwords(), by = "word") %>% 
+  count(ID, word, sort = TRUE)%>% 
+  group_by(word) %>% 
+  summarise(count= sum(n)) %>%
+  arrange(desc(count)) %>%
+  filter( !word %in% c("theory","contributions","proof")) %>% 
+  head(3)
+```
+
+
+
+# Question 3
+```{r}
+setwd("C:/Users/user/Documents/School/Year 3/Semester 2/Data Analysis/Data Analysis Homework/DA HW2")
+hn19= read_sas("HN19_ALL.sas7bdat")
+```
+
+## Question 3a)
+##  DATA WRANGLING
+In the analysis, we focused on HE_chol, HE_sbp, HE_dbp variables.\
+HE_chol: 총콜레스테롤\
+HE_sbp: 최종 수축기 혈압(2,3차 평균) - systolic blood pressure\
+HE_dbp: 최종 이완기 혈압(2,3차 평균) - diabolic blood pressure\
+
+Question: Does increasing cholesterol consumption increase SBP and DBP?
+```{r}
+hn19_chol =hn19 %>%
+  filter(!is.na(HE_chol)) %>% 
+  filter(HE_chol>100) %>% 
+  mutate(HE_chol_cat= cut(HE_chol, breaks= c(0,200,240,Inf),labels= c("Desirable", "Borderline High", "High"))) %>% 
+  mutate(HE_sbp_cat= cut(HE_sbp, breaks= c(0,130, Inf),labels = c("Low","High"))) %>% 
+  mutate(HE_dbp_cat= cut(HE_dbp, breaks= c(0,80, Inf),labels = c("Low","High")))
+
+hn19_chol_detail =hn19 %>%
+  filter(!is.na(HE_chol)) %>% 
+  filter(HE_chol>100) %>% 
+  mutate(HE_chol_cat= cut(HE_chol, breaks= c(0,200,240,Inf),labels= c("Desirable", "Borderline High", "High"))) %>% 
+  mutate(HE_sbp_cat= cut(HE_sbp, breaks= c(0,90,120,130,140, Inf),labels = c("Low","Normal","Elevated","High BP(Stage 1)","High BP(Stage 2)"))) %>% 
+  mutate(HE_dbp_cat= cut(HE_dbp, breaks= c(0,60,70,80,90, Inf),labels = c("Low","Normal","Elevated","High BP(Stage 1)","High BP(Stage 2)")))
+ 
+```
+To help with analysis, we created new variables:\
+HE_chol_cat: 총콜레스테롤 수치변수를 cut()을 이용해 변수형 데이터로 변경함\
+HE_sbp_cat: 수축기 혈압 수치변수를 cut()을 이용해 변수형 데이터로 변경함\
+HE_dbp_cat: 이완기 혈압 수치변수를 cut()을 이용해 변수형 데이터로 변경함\
+
+HE_chol_cat are divided as shown in the picture below:\
+![Cholesterol categorised into Desirable, Borderline High, High](C:/Users/user/Documents/School/Year 3/Semester 2/Data Analysis/Data Analysis Homework/DA HW2/cholesterol.png)
+
+*hn19_chol* data frame is used for the scatter plots below. HE_sbp_cat and HE_dbp_cat only divide at 130 and 80, respectively. These values are the minimum blood pressure in mmHg for high SBP and DBP set by the 2017 American College of Cardiology/American Heart Association Blood Pressure Guidelines.\
+\
+*hn19_chol_detail* data frame is used for the stacked bar graph plots below. As will be shown below in the scatter plots, it's hard to show the change in proportion with a line across the y-intercept, so we will use a stacked bar graph to see the whether people have higher blood pressure with more cholesterol consumption.
+
+For hn19_chol_detail, the HE_sbp_cat and HE_dbp_cat are further divded as shown in the picture below:\
+![SBP and DBP categorised into low, normal, elevated, high BP(1) and high BP(2) by number](C:/Users/user/Documents/School/Year 3/Semester 2/Data Analysis/Data Analysis Homework/DA HW2/bp.png)
+
+
+##  SCATTER GRAPH
+```{r}
+#3a)
+## CHOLESTEROL VS SBP SCATTER GRAPH 
+  ggplot(hn19_chol, aes(HE_chol, HE_sbp))+
+    geom_point(aes(color= HE_chol_cat))+
+    geom_hline(yintercept = 130)+
+    geom_text(x=320, y=132, label= "Above 130mmHg is High Systolic BP")+
+    geom_smooth(method=lm,se=TRUE)+
+  labs(x="Cholesteorol Intake", y= "Systolic Blood Pressure")
+  
+  
+## CHOLESTEROL VS DBP  SCATTER GRAPH  
+#3c)
+  
+ggplot(hn19_chol, aes(HE_chol, HE_dbp))+
+  geom_point(aes(color= HE_chol_cat))+
+  geom_hline(yintercept = 80)+
+  geom_text(x=320, y=82, label= "Above 80mmHg is High Systolic BP")+
+  geom_smooth(method=lm,se=TRUE)+
+  labs(x="Cholesteorol Intake", y= "Diabolic Blood Pressure")
+
+```
+
+
+LDL 많아질수록 SBP가 감소한다- negative correlation.\
+LDL 많아질수록 DBP가 증가한다- positive correlation.DBP has a much rate of increase than does SBP as the slope is steeper 
+
+```{r}
+summary(lm(data=hn19_chol, HE_chol~HE_sbp))
+summary(lm(data=hn19_chol, HE_chol~HE_dbp))
+```
+
+Linear regression of HE_chol against HE_sbp has p_value that is very small so significantly significant.\
+Linear regression of HE_chol against HE_dbp has p_value that is very small so significantly significant.
+
+## STACKED BAR GRAPH TO COMPARE PROPORTIONS
+
+```{r}
+#3a)
+## CHOLESTEROL VS SBP STACKED BAR GRAPH
+ggplot(hn19_chol_detail,aes(HE_chol_cat,fill=HE_sbp_cat))+
+  geom_bar(position= position_fill(reverse=TRUE))+
+  labs(x="Cholesterol by amount cateogrised", y= "Proportion of SBP")
+
+#3c)  
+  ## CHOLESTEROL VS DBP STACKED BAR GRAPH
+  ggplot(hn19_chol_detail,aes(HE_chol_cat,fill=HE_dbp_cat))+
+    geom_bar(position= position_fill(reverse=TRUE))+
+    labs(x="Cholesterol by amount cateogrised", y= "Proportion of DBP")
+```
+We can see from the stacked bar graphs that as the choelesteroal intake increases, the proportion of high SBP and DBP both increases.
+This is observed for both SBP and DBP.
+
+## Question 3 b)
+Referencing, paper called: "Combined effects of systolic blood pressure and serum cholesterol on cardiovascular mortality in young ( <55 years) men and women"
+
+The paper shows that Blood pressure (BP) and cholesterol are major risk factors for cardiovascular disease and that cholesteorl increases both systolic and diaboli blood pressure. In men, high cholesterol was found twice as much in hypertensives than in normotensives; in women, it was more than three times higher. Both cholesterol and high blood pressure were a risk factors for cardiovascular disease and coronary heart disease. According to the research paper alluded bleow, in men, a borderline elevation of both systolic blood pressure (130-139 mmHg) and cholesterol (200-239 mg x dl(-1)) leads to a three- to four-fold increase in cardiovascular disease risk. Men with systolic blood pressure >or=160 mmHg represent a small percentage (about 5%) who have a 10-fold increase in cardiovascular disease and coronary heart disease risk, especially when high cholesterol is present. The paper is in accordance to our result: higher cholesterol increases the higher SBP and DBP, which in turn increase the chance of cardiobascualr disease.
+
