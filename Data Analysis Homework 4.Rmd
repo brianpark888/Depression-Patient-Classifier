@@ -1,0 +1,94 @@
+---
+title: "DA HW4 박정명 제출"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(NHANES)
+library(tidymodels)
+```
+
+# Preparing data1 dataset
+```{r}
+data1= NHANES %>% dplyr::select(Gender,Age, Race1, Education,HHIncome,HomeOwn,Weight,Height,BMI,PhysActive)
+data1$HHIncome= as.character(data1$HHIncome)
+temp= data1$HHIncome%>% str_split_fixed("-",2) %>%  data.frame()
+data1= data1 %>%  mutate(min_Income= (temp$X1), max_Income= (temp$X2)) %>% 
+  mutate(min_Income= ifelse(min_Income=="more 99999", "99999",min_Income)) %>% 
+  mutate(max_Income= ifelse(max_Income=="", 100000, max_Income))
+data1$min_Income= as.integer(data1$min_Income)
+data1$max_Income= as.integer(data1$max_Income)
+```
+
+
+
+```{r}
+data1=data1 %>% mutate(
+          male=ifelse(Gender== "male", 1,0),
+          white= ifelse(Race1 =="White",1,0),
+          black= ifelse(Race1== "Black",1,0),
+          hs=ifelse(Education%in% c("High School", "Some College", "College Grad"),1,0),
+          income_high=ifelse(max_Income>= 75000, 1,0),
+          income_low= ifelse(max_Income <=25000, 1,0),
+          own= ifelse(HomeOwn== "Own",1,0),
+          phy_act_yes= ifelse(PhysActive== "Yes",1,0)
+         )
+
+data1=data1 %>%  dplyr::select(BMI,Age,male,white,black,hs,income_high,income_low,own,phy_act_yes)
+
+data1=data1[complete.cases(data1),]
+```
+
+```{r}
+data1 %>% head(5)
+```
+
+```{r}
+data1 = data1 %>%
+mutate(phy = as.factor(phy_act_yes))
+set.seed(1111)
+n <- nrow(data1)
+nhanes_parts <- data1 %>%
+initial_split(prop = 0.8)
+train <- nhanes_parts %>%
+training()
+test <- nhanes_parts %>%
+testing()
+```
+
+## Question 1a)
+```{r}
+c(train=nrow(train),test =nrow(test)) %>% data.frame() %>% 
+  rename("count"= ".") %>% 
+  mutate(prop= count/sum(count))
+```
+As we wanted,we have a 80:20 split
+
+## Question 1b)
+```{r}
+model1= glm(phy_act_yes~BMI, data= train, family="binomial")
+pred1= model1$fitted.values>0.5
+table(pred1, real=train$phy_act_yes)
+```
+
+## Question 1c)
+```{r}
+
+```
+
+## Question 1d)
+```{r}
+model_1d2= glm(phy_act_yes~BMI+male+Age, data= train,family= "binomial")
+model_1d3= glm(phy_act_yes ~ BMI + male + Age+white+ black, data= train,family= "binomial")
+model_1d4= glm(phy_act_yes ~ BMI + male + Age + white + black + income_high + income_low, data= train,family= "binomial")
+model_1d5= glm(phy_act_yes ~ BMI + male + Age + white + black + income_high + income_low + hs + own, data= train,family= "binomial")
+
+```
+
+## Question 1e) 
+```{r}
+
+```
+
