@@ -1,0 +1,378 @@
+---
+title: "DA HW5 박정명"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(tidymodels)
+library(kknn)
+library(yardstick)
+library(rpart)
+library(randomForest)
+library(e1071)
+```
+
+# Preparing data
+```{r}
+data = iris
+# x=data[,-5]; y=data$Species
+set.seed(1111)
+n <- nrow(data)
+iris_parts <- data %>%
+  initial_split(prop = 2/3)
+train <- iris_parts %>%
+  training()
+test <- iris_parts %>%
+  testing()
+```
+
+# Question 1
+## Question 1a) KNN
+```{r}
+train %>% glimpse ()
+#Knn can't use categorical variable- select only the numerical variables
+#All variables are numerical variables anyways
+
+
+k_vals =seq(1,10,2)
+
+accuracy_cmat= function(.data){
+  tidy_conf= pred%>% conf_mat(Species, Species_knn_train)%>% tidy()
+  a= .data%>% filter(name %in% c("cell_1_1","cell_2_2", "cell_3_3"))%>% select(value) %>% sum()
+  b=.data %>% select(value) %>% sum()
+  print(a/b)
+}
+
+for (i in k_vals){
+  
+mod_knn <- nearest_neighbor(neighbors = i, mode = "classification") %>%
+  set_engine("kknn", scale = TRUE) %>%
+  fit(Species ~ ., data = train)
+# Scaling set to TRUE
+
+pred <- train %>%
+  select(Species)  
+
+pred <- pred %>%
+  bind_cols(
+    predict(mod_knn, new_data = train, type = "class")
+  ) %>%
+  rename(Species_knn_train = .pred_class)
+
+
+
+pred_test <- test %>%
+  select(Species) 
+
+pred_test <- pred_test %>%
+  bind_cols(
+    predict(mod_knn, new_data = test, type = "class")
+  ) %>%
+  rename(Species_knn_test = .pred_class)
+
+
+print(paste("Training set confusion matrix for k="), i)
+pred %>%
+  conf_mat(Species, Species_knn_train)%>% print()
+
+print(paste("Testing set confusion matrix for k="), i)
+pred_test %>%
+  conf_mat(Species, Species_knn_test)%>% print()
+
+
+paste("Accuracy of training dataset at k=",i, " is:") %>% print()
+accuracy_train= pred %>%
+  conf_mat(Species, Species_knn_train) %>% tidy() %>%  accuracy_cmat()
+
+paste("Accuracy of testing dataset at k=",i, " is:") %>% print()
+accuracy_test= pred_test %>%
+  conf_mat(Species, Species_knn_test)%>% tidy() %>% accuracy_cmat()
+}
+# Accuracy calculated from "the confusion matrix"
+# Can use accuracy() or conf_mat()%>% summary() for easier method.
+
+```
+Will check models for k values for 1-5 since they have the best accuracy for training and testing datasets.
+
+## Optimal K value is 1,2,3 or 4 where accuracy is 1.
+
+```{r}
+# Can also use map function
+knn_fit <- function(.data, k) {
+  nearest_neighbor(neighbors = k, mode = "classification") %>%
+  set_engine("kknn", scale = TRUE) %>%
+  fit(Species ~ ., data = .data)
+}
+
+knn_accuracy <- function(mod, .new_data) {
+  mod %>%
+    predict(new_data = .new_data) %>%
+    mutate(Species = .new_data$Species) %>%
+    accuracy(Species, .pred_class) %>%
+    pull(.estimate)
+}
+
+ks <- seq(1,5,1)
+
+
+knn_tune <- tibble(
+  k = ks,
+  mod = map(k, knn_fit, .data = train),
+  mod_test = map(k, knn_fit, .data= test),
+  train_accuracy = map_dbl(mod, knn_accuracy, .new_data = train),
+  test_accuracy= map_dbl(mod, knn_accuracy, .new_data= test),
+)
+knn_tune
+
+knn_tune%>% select(-mod, -mod_test)%>%
+  ggplot()+
+  geom_point(aes(k, train_accuracy), color= "blue")+
+  geom_line(aes(k, train_accuracy), color= "blue")+
+  geom_point(aes(k, test_accuracy), color= "red")+
+  geom_line(aes(k, test_accuracy), color= "red")
+
+```
+
+K-value of 1~4 gives the best parameters for all metrics.
+
+The larger k is, the smoother the classification boundary. i.e the complexity of KNN falls as k increases. Therfore, we choose K value of 4.
+
+
+
+## Question 1b) Decision Tree
+```{r}
+mod_dtree <- decision_tree(mode = "classification") %>%
+  set_engine("rpart", control = rpart.control(cp = 0.002, minbucket = 30)) %>%
+  fit(Species ~ ., data = train)
+
+pred_dtree <- pred %>%
+  bind_cols(
+    predict(mod_dtree, new_data = train, type = "class")
+  ) %>%
+  rename(Species_dtree_train = .pred_class)
+
+
+pred_test <- test %>%
+  select(Species) 
+
+pred_test_dtree <- pred_test %>%
+  bind_cols(
+    predict(mod_dtree, new_data = test, type = "class")
+  ) %>%
+  rename(Species_dtree_test = .pred_class)
+
+pred_dtree %>%
+  conf_mat(Species, Species_dtree_train)
+
+pred_test_dtree %>%
+  conf_mat(Species, Species_dtree_test)
+```
+
+#Computed accuracy based on confusion matrix
+
+Accuracy of Decision Tree model on training dataset is:
+```{r}
+pred_dtree %>%
+  conf_mat(Species, Species_dtree_train)%>% tidy() %>% accuracy_cmat()
+```
+
+Accuracy of Decision Tree model on testing dataset is:
+```{r}
+pred_test_dtree %>%
+  conf_mat(Species, Species_dtree_test)%>% tidy() %>% accuracy_cmat()
+```
+Can also use:
+
+accuracy(pred_dtree, Species, Species_dtree_train)
+
+accuracy(pred_test_dtree, Species, Species_dtree_test)
+
+
+
+## Question 1c)
+```{r}
+mod_forest <- rand_forest(
+  mode = "classification", 
+  mtry = 2, 
+  trees = 500
+) %>%
+  set_engine("randomForest") %>%
+  fit(Species~., data = train)
+
+
+pred_forest <- pred %>%
+  bind_cols(
+    predict(mod_forest, new_data = train, type = "class")
+  ) %>%
+  rename(Species_forest_train = .pred_class)
+
+
+pred_test <- test %>%
+  select(Species) 
+
+pred_test_forest <- pred_test %>%
+  bind_cols(
+    predict(mod_forest, new_data = test, type = "class")
+  ) %>%
+  rename(Species_forest_test = .pred_class)
+
+```
+
+Computed accuracy based on confusion matrix
+
+Accuracy of Random Forest model on training dataset is:
+```{r}
+pred_forest %>%
+  conf_mat(Species, Species_forest_train)%>% tidy() %>% accuracy_cmat()
+```
+
+Accuracy of Random Forest model on testing dataset is:
+```{r}
+pred_test_forest %>%
+  conf_mat(Species, Species_forest_test)%>% tidy() %>% accuracy_cmat()
+```
+Can also use:
+
+accuracy(pred_forest, Species, Species_forest_train)
+
+accuracy(pred_test_forest, Species, Species_forest_test)
+
+## Question 1d) Naives Bayes
+Training dataset Naives Bayes
+Accuracy calculated based on confusion matrix
+```{r}
+dmod_nb <- naiveBayes(Species~., data = train)
+table_nb = table(real = train$Species, pred = predict(dmod_nb, train))
+table_nb
+(table_nb[1,1]+ table_nb[2,2]+table_nb[3,3])/sum(table_nb)
+```
+
+Testing dataset Naives Bayes
+```{r}
+table_nb_test = table(real = test$Species, pred = predict(dmod_nb, test))
+table_nb_test
+(table_nb_test[1,1]+ table_nb_test[2,2]+table_nb_test[3,3])/sum(table_nb_test)
+```
+
+
+# Question 2
+## Question 2a)
+Implement k-Means algorithm with k = 3 and compare that result to the “true” value Species which is not used in the algorithm
+
+```{r}
+set.seed(1111)
+
+data_scale =data %>%  select(-Species) %>%  scale()
+
+
+km.out_2a <- kmeans(data_scale, 3, nstart = 25)
+
+km.out_2a$betweenss/km.out_2a$totss*100
+```
+76.7% of the total variance in iris data set is explained by the clustering.
+
+```{r}
+table(km.out_2a$cluster, data$Species)
+```
+Cluster 2 is setosa
+Cluster 1 and 3 are mixed with versicolor and virginica meaning that the K-means algorithm is not clustering the versicolor and virginica species well but seperates setosa well.
+
+```{r}
+plot(data_scale, col = (km.out_2a$cluster + 1),
+     main = "K-Means Clustering Results with K = 2",
+     xlab = "", ylab = "", pch = 20, cex = 2)
+```
+We can observe this from the plot- The blue and green cluster are not seperated fully.
+
+## Question 2b)
+```{r}
+km.out_2b <- kmeans(data_scale, 2, nstart = 25)
+km.out_2b$betweenss/km.out_2b$totss*100
+```
+62.9% of the total variance in iris data set is explained by the clustering. The more clusters the higher this value will be.
+
+```{r}
+table(km.out_2b$cluster, data$Species)
+```
+Setosa is easily seperated from the versicolor and virginica as shown in the kmeans model of 3 clusters.
+
+```{r}
+plot(data_scale, col = (km.out_2b$cluster + 1),
+     main = "K-Means Clustering Results with K = 2",
+     xlab = "", ylab = "", pch = 20, cex = 2)
+```
+We can see the top left cluster the same as the kmeans (cluster=3) plot in question 2a)
+
+## Question 2c)
+```{r}
+km.out_2c <- kmeans(data_scale, 4, nstart = 25)
+km.out_2c$betweenss/km.out_2c$totss*100
+```
+The Within cluster sum of squares by cluster increases to 80.98463%. This is expected as more clusters lead to a higher value. However, since we know that there are 3 species, we will use k=3 for question 2e).
+
+
+```{r}
+
+table(km.out_2c$cluster, data$Species)
+```
+
+
+```{r}
+plot(data_scale, col = (km.out_2c$cluster + 1),
+     main = "K-Means Clustering Results with K = 2",
+     xlab = "", ylab = "", pch = 20, cex = 2)
+
+```
+
+## Question 2d)
+```{r}
+pr.out = prcomp(data[1:4], scale=TRUE)
+biplot(pr.out, scale = 0)
+pve= pr.out$sdev^2/sum(pr.out$sdev^2)
+pve
+```
+
+```{r}
+par(mfrow= c(1,2))
+plot(pve, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained", ylim = c(0, 1),
+     type = "b")
+
+
+plot(cumsum(pve), xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     ylim = c(0, 1), type = "b")
+
+```
+We use the first 2 PCs which explain 95.8% of the variance in the data
+```{r}
+pr.out$rotation[,1:2] %>% as.data.frame()
+```
+Interpreting the two componenets: Sepal.Length, Sepal.Length and Petal Width havea large positive loading on PC1. This means that PC1 is positively correlated with these variables. This suggests that these three predictor variables vary together. This is seen in the plots of PC1 and PC2.
+
+Sepal Width has a large negative loading on PC2. This means that PC2 is negatively correlated with these variables.
+
+## Question 2e)
+```{r}
+#Limit components to the first 2 using rank parameter
+pr.out_k = prcomp(data[1:4], scale=TRUE,rank=2)
+
+#Predict Iris species using predict()
+pc_predict = predict(pr.out_k, newdata= data[1:4])
+
+#Run k means
+pc_k_out=kmeans(pc_predict, 3, nstart = 25)
+pc_k_out$betweenss/pc_k_out$totss*100
+table(pc_k_out$cluster, data$Species)
+```
+Compared to the model that use the 4 original variables to that of the k means model with that of the PC variables, we got a higher within cluster sum of squares by cluster value of 76.69658 vs 79.99219, respectively.
+```{r}
+plot(data_scale, col = (pc_k_out$cluster + 1),
+     main = "K-Means Clustering Results with K = 2",
+     xlab = "", ylab = "", pch = 20, cex = 2)
+```
+The versicolor were correctly classified when using the PC_kmeans model.
