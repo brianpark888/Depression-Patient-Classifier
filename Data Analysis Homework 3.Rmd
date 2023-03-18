@@ -1,0 +1,269 @@
+---
+title: "HW3_3"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(NHANES)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(tidyverse)
+library(olsrr)
+library(MASS)
+library(boot)
+library(haven)
+```
+
+## R Markdown
+
+# Question 1
+## Question 1a
+### Data Wrangling
+Here I changed HHIncome variable from (min-max) format to into two colummns
+```{r}
+NHANES_1= NHANES %>% dplyr::select(Gender,Age, Race1, Education,HHIncome,HomeOwn,Weight,Height,BMI,PhysActive)
+NHANES_1$HHIncome= as.character(NHANES_1$HHIncome)
+temp= NHANES_1$HHIncome%>% str_split_fixed("-",2) %>%  data.frame()
+NHANES_1= NHANES_1 %>%  mutate(min_Income= (temp$X1), max_Income= (temp$X2)) %>% 
+  mutate(min_Income= ifelse(min_Income=="more 99999", "99999",min_Income)) %>% 
+  mutate(max_Income= ifelse(max_Income=="", 100000, max_Income))
+NHANES_1$min_Income= as.integer(NHANES_1$min_Income)
+NHANES_1$max_Income= as.integer(NHANES_1$max_Income)
+```
+
+
+Encoding into Binary Values
+```{r}
+NHANES_1=NHANES_1 %>% mutate(
+          male=ifelse(Gender== "male", 1,0),
+          white= ifelse(Race1 =="White",1,0),
+          black= ifelse(Race1== "Black",1,0),
+          hs=ifelse(Education%in% c("High School", "Some College", "College Grad"),1,0),
+          income_high=ifelse(max_Income>= 75000, 1,0),
+          income_low= ifelse(max_Income <=25000, 1,0),
+          own= ifelse(HomeOwn== "Own",1,0),
+          phy_act_yes= ifelse(PhysActive== "Yes",1,0)
+         )
+
+NHANES_1=NHANES_1 %>%  dplyr::select(BMI,Age,male,white,black,hs,income_high,income_low,own,phy_act_yes)
+
+```
+
+## Question 1b
+```{r}
+NHANES_1=NHANES_1[complete.cases(NHANES_1),]
+paste("The rows of our dataset is: ", nrow(NHANES_1))
+```
+
+
+## Question 1c
+```{r}
+model_1c= lm(BMI~phy_act_yes,data=NHANES_1)
+summary(model_1c)
+```
+The B1 coefficient is -2.3307(2sf), which shows that for those who are physically active have lower BMIs than those who do not
+The B1 coefficient is statistically significant as we can see from the very small p value.
+The R squared value is 0.02904 so around 3% of the variation in BMI can be explained by whether someone does physical activity.
+
+## Question 1d
+```{r}
+model_1d = lm(BMI~.,data=NHANES_1)
+summary(model_1d)
+
+```
+The Beta_phys_act_yes coefficient is -1.824190, which shows that for those who are physically active have lower BMIs than those who do not
+The B1 coefficient is statistically significant as we can see from the very small p value
+
+If we compare model_1c's R-squared value and model_1d's adjusted R-squared value, model_1d's
+higher adjusted R-square's value suggests that model_1d predictor variables explain more of the variation in BMI.
+
+## Question 1e
+```{r}
+stepAIC(model_1d)
+```
+Age , male , black , hs , income_high , own ,  phy_act_yes are the variables chosen by the AIC backward selection model to explain the variation in BMI.
+
+# Exercise 2
+## Exercise 2a)
+```{r}
+model_2a= glm(phy_act_yes~BMI,data= NHANES_1,family= "binomial")
+summary(model_2a)
+```
+Here, we can see that the logarithm of physical activity decreases by 0.05229009 for every increase of BMI by 1
+
+### Odd Ratios
+```{r}
+exp(coef(model_2a)[2])
+```
+As BMI increases by 1 unit, the predicted odds are multiplied by 0.9490535, meaning that the chance of physical activity decreases by a factor of 0.9490535 for every increase in 1 unit of BMI.
+The p-value for the Beta1 coefficient is small, so it is statistically significant.
+We can visualise this relationship down below.
+```{r}
+ggplot(NHANES_1,aes(BMI,phy_act_yes))+geom_point()+
+  stat_smooth(method="glm",color="green",se=FALSE,
+              method.args=list(family=binomial))
+```
+
+
+## Exericse 2b
+```{r}
+model_2.1= glm(phy_act_yes~BMI, data= NHANES_1,family= "binomial")
+model_2.2= glm(phy_act_yes~BMI+male+Age, data= NHANES_1,family= "binomial")
+model_2.3= glm(phy_act_yes ~ BMI + male + Age+white+ black, data= NHANES_1,family= "binomial")
+model_2.4= glm(phy_act_yes ~ BMI + male + Age + white + black + income_high + income_low, data= NHANES_1,family= "binomial")
+model_2.5= glm(phy_act_yes ~ BMI + male + Age + white + black + income_high + income_low + hs + own, data= NHANES_1,family= "binomial")
+
+```
+
+The p-value for each model BMI coefficient in respective order
+```{r}
+for(i in 1:4){
+  print(paste("The p-value of model ", i, " is: ", summary(get(paste0("model_2.",i)))$coef[2,4]))
+}
+```
+
+As we can see, for all models, the BMI Beta coefficient had a very small value so the BMI value is a statistically significant explanatory variable for predicting physical acitivity
+
+```{r}
+coef_2b=data.frame(model_2.1=c(coef(model_2.1),rep(NA, 10-length(coef(model_2.1)))),
+           model_2.2=c(coef(model_2.2),rep(NA, 10-length(coef(model_2.2)))),
+           model_2.3=c(coef(model_2.3),rep(NA, 10-length(coef(model_2.3)))),
+           model_2.4=c(coef(model_2.4),rep(NA, 10-length(coef(model_2.4)))),
+           model_2.5=c(coef(model_2.5),rep(NA, 10-length(coef(model_2.5))))
+) %>% print()
+
+odd_2b=coef_2b[2,] %>% pluck() %>% exp() %>% print()
+
+for(i in 1: 4){
+    print(paste("Difference between coefficient of model ", i+1, " and ", i, " is ",odd_2b[i+1]-odd_2b[i]))
+}
+```
+
+The change in Beta coefficient is a function of the magnitude of  (1) the correlation between BMI variable and added variable and (2) the correlation between the added variable and phy_act_yes. As we can see the max change in Beta coefficient occurs between model 2 and model 1 when the Age variable is added.
+The Age variable is the most correlated with BMI and phy_act_yes.
+
+```{r}
+cor(NHANES_1) %>% data.frame() %>% dplyr::select(BMI) %>% arrange(abs(BMI) %>% desc())
+cor(NHANES_1) %>% data.frame() %>% dplyr::select(phy_act_yes) %>% arrange(abs(phy_act_yes) %>% desc())
+```
+This is called the _omited variable bias_ and occurs when the model 1 misses out relevant variables. If Y is caused by both Xi and Xj, where Xi and Xj are correlated, but Xj is omitted, some or the variation in Y due to Xj will be innapropriately attributed to Xi, making Xi biased.
+
+## Question 2c
+```{r}
+set.seed(1)
+cv.error.5 <- rep(0, 5)
+for(i in 1:5){
+  cv.error.5[i]= cv.glm(NHANES_1, get(paste0("model_2.",i)),K=10)$delta[1]
+}
+cv.error.5
+plot(0:4, cv.error.5,xlab= "Model", ylab="Testing Error")
+```
+Here, we can see that there is the first drop from model_2.1 to model_2.2 then a drop from model_2.4 to model_2.5
+This suggests that adding male, age, white, black, income_high, income_low, hs, own will lead to lower test error terms than the model with only BMI.
+
+
+# Question 3
+## Question 3a
+```{r}
+hn19= read_sas("HN19_ALL.sas7bdat")
+```
+어떠한 요인이 우울증을 유발할까요?
+  
+  크게 3가지로 결혼생활의 불화, 신체적 결함, 안 좋은 습관을 떠올릴 수 있습니다. 가화만사성은 정말 사실일까?에 대한 궁금증에서 시작하여 저희는
+
+우을감에 결혼생활이 얼마나 영향을미치는 가를 분석하고자 합니다.
+
+우을을 판단하는 변수는 아래와 같습니다. BP_5: 2주 이상 연속 우울감 여부 1:예 2:아니오 (Discrete categorical nominal data)
+
+1.결혼생활을 판별하는 변수는 아래와 같습니다. marri_2 결혼상태 1: 유배우자,동거 2~4: 별거, 사별, 이혼
+
+안 좋은 습관에 대한 변수는 아래와 같습니다. LQ_7HT: 잠자기 1: 잠을 자는데 어려움이 없다. 2~4: 잠을 자는데 어려움이 약간/많이/절대적으로 있다. BS1_1: 평생 흡연여부 1: 5값 미만 2: 5갑 이상 BD2_31: 폭음빈도 1: 전혀없음 2: 월1회미만 3: 월1회정도 4: 주 1회정도 5: 거의매일
+
+신체적 결함에 대한 변수는 아래와 같습니다. 질환에 대한 노출 여부와 체형을 판단하기 위한 지표입니다. D_1_1: 주관적 건강인지 1~3: 매우좋음,좋음 보통 4~5: 나쁨, 매우나쁨 BO1: 주관적 체형인식 1: 매우 마른편, 2: 약간 마른편, 3: 보통, 4: 약간 비만, 5:매우비만
+
+We can see the relationship in the paper below:
+(https://pubmed.ncbi.nlm.nih.gov/29861378/)
+To quote the results, "Participants with short sleep duration (<5 and 5-6 h) had a higher risk of depression onset (OR 1.69 [1.36-2.11], 1.48 [1.19-1.84]) and recurrent depression (OR 1.44 [1.12-1.86], 1.32 [1.00-1.74]) compared to participants with normal sleep durations (7-8 h)."
+
+
+### Data Wrangling
+```{r}
+hn19=hn19%>%
+  dplyr::select(marri_2,D_1_1,BP5,LQ_7HT,BS1_1,BD2_31)%>%
+  filter(marri_2 %in% c(1,2,3,4))%>%
+  filter(D_1_1!=9)%>%
+  filter(LQ_7HT %in% c(1,2,3,4))%>%
+  filter(BD2_31 %in% c(1,2,3,4,5))%>%
+  filter(BS1_1 %in% c(1,2,3))%>%
+  filter(BP5 %in% c(1,2))
+hn19$marri_2= as.factor(hn19$marri_2)
+```
+
+```{r}
+hn19=hn19%>% mutate(D_1_1_cat=ifelse(D_1_1 %in% c(4,5),1,0),
+                    BP5_cat=ifelse(BP5==1,1,0),
+                    LQ_7HT_cat=ifelse(LQ_7HT>2,1,0),
+                    BD2_31_cat=ifelse(BD2_31==1,0,1),
+                    BS1_1_cat=ifelse(BS1_1==3,0,1),
+)
+```
+
+
+```{r}
+model_3=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat+BD2_31_cat+BS1_1_cat,  data=hn19, family="binomial")
+```
+We use a logistic regression model since the outcome is binomial and we can use the predictor variables to see whether an individual will have depression or not
+
+## Question 3b
+```{r}
+summary(model_3)
+```
+
+We can see that marri_22, BD2_31_cat, BS1_1_cat are all not significantly significant variables in explaining the variation in BP5_cat.
+
+We can confirm this using the backward AIC selection
+```{r}
+stepAIC(model_3)
+```
+So we choose BP5_cat ~ marri_2 + D_1_1_cat + LQ_7HT_cat for our final model.
+
+## Question 3c
+```{r}
+model_3c0=glm(BP5_cat~marri_2,  data=hn19, family="binomial")
+model_3c1=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat,  data=hn19, family="binomial")
+model_3c2=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat+marri_2*D_1_1_cat, data=hn19, family="binomial")
+model_3c3=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat+marri_2*LQ_7HT_cat,  data=hn19, family="binomial")
+model_3c4=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat+marri_2*D_1_1_cat+marri_2*LQ_7HT_cat,  data=hn19, family="binomial")
+model_3c5=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat+marri_2*D_1_1_cat+D_1_1_cat*LQ_7HT_cat,  data=hn19, family="binomial")
+model_3c6=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat+marri_2*LQ_7HT_cat+D_1_1_cat*LQ_7HT_cat,  data=hn19, family="binomial")
+model_3c7=glm(BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat+marri_2*D_1_1_cat+marri_2*LQ_7HT_cat+D_1_1_cat*LQ_7HT_cat,  data=hn19, family="binomial")
+
+
+set.seed(17)
+cv.error.8 <- rep(0, 8)
+for (i in 0:7) {
+  cv.error.8[i+1] <- cv.glm(hn19, get(paste0("model_3c",i)), K = 10)$delta[1]
+}
+plot(1:8-1,cv.error.8,xlab= "Model", ylab="Testing error")
+```
+We can see that testing error is the lowest for model 1 so we choose as our model- which has no interactions. This model is BP5_cat~marri_2+D_1_1_cat+LQ_7HT_cat.
+
+#
+```{r}
+model_coef3= list()
+for (i in 0:7){
+  model_coef3[[i+1]]=coef(get(paste0("model_3c",i)))[2:4]
+}
+model_coef3
+```
+As we can see, the marri_22 coefficient fell from 0.76 to 0.63, marri_23 coefficient fell from 1.039 to 1.166 and marri_24 fell from 0.9113016 to 0.736 when we went from the model with 1 predictor variable to the new model.
+
+## Odds ratio of model with single predictor and new model
+```{r}
+model_coef3[[1]] %>% exp()
+model_coef3[[2]] %>% exp()
+```
+So in all three groups, the odds ratio of depression fell when going from 동거 to either 별거, 사별 or 이혼. However, even after adding D_1_1_cat and LQ_7HT_cat variables, marr2_1,2 and 3 all showed an odd ratio of larger than 1- this means that going for 동거 to either 별거, 사별 or 이혼 the odds of being depression increased by a factor of the value in the vector.
