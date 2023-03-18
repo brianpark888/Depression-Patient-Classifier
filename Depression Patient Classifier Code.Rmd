@@ -1,0 +1,564 @@
+---
+title: "Finalproject_2"
+author: "LeeSanghyuk"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+한국보건사회연구원이 2018년에 발표한 '노인실태조사'를 보면 65세 노인의 21.1%가 우울증상을 지니고 있는 것으로 나타났고, 6.7%는 자살을 생각해본 적이 있다고 답했다. 그리고 자살을 생각해본 적 있는 노인들 가운데 13.2%는 자살을 시도한 경험도 갖고 있었다.
+건강한 사회를 위해 정성적인 방안에서 벗어나 정량적이고 기술집약적인 방안을 시도할 필요성이 있다.
+
+## (A) Objective
+
+노인인구에 우을증과 자살 가능성을 예측하는 supervised model 구축해 
+노인인구의 자살 빈도 감소 및 우을증을 앓고 있는 노인에게 정신 건강 지원 시스템을 구축할 수 있도록 한다.
+
+## (B) Data analysis plan including literature review
+
+한국 법과 여러 노인 관련 논문 기준에 따라 만 65새 이상을 노인으로 칭한다.
+Workflow는 아래와 같다.
+1. '노인', '우울', '자살'의 교집합들에 속하는 논문을 바탕으로 변수 창출
+2. EDA 분석 및 AIC feature selection
+3. 로지스틱, tree, randomforest model 생성
+4. Accuracy 및 Specifity test
+5. PR 및 ROC curve로 model valuation
+
+Which models will we not use?
+LDA and QDA were not used as our predictor variables were mainly categorical variables; LDA and QDA require numerical predictor variables with an assumption that the predictor variables are drawn from a multivariate Gaussian (aka normal) distribution. KNN
+KNN can also only be used with numerical predictor variables since it uses Euclidean distance (or Manhattan/Minkowski distance). Our variables are mainly categorical variables so these model was excluded. Naives Bayes also has an assumption of independence in predictors. In real life, it is almost impossible that we get predictors which are completely independent. Many diseases are not independent from one another; for example, often most genes are pleiotropic and lead to multiple diseases.Since these assumptions do not hold well so we excluded this model.
+
+
+# Literature review
+
+# 노인의 우울증에 영향을 미치는 요인: 국민건강영양조사 제7기 자료 및 한국 성인여성들의 우울증과 자살생각에 대한 분석 -제4기 국민건강영양조사자료를 이용하여
+
+링크1:https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART002592642
+링크2: https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART001547852
+저널: Journal of Health Informatics and Statistics
+Seo, J., Choi, B., Kim, S. et al. The relationship between multiple chronic diseases and depressive symptoms among middle-aged and elderly populations: results of a 2009 korean community health survey of 156,747 participants. BMC Public Health 17, 844 (2017). https://doi.org/10.1186/s12889-017-4798-2
+
+Ma, Y., Xiang, Q., Yan, C., Liao, H., & Wang, J. (2021). Relationship between chronic diseases and depression: the mediating effect of pain. BMC psychiatry, 21(1), 436. https://doi.org/10.1186/s12888-021-03428-3
+
+
+우울규정: PHQ-9의 총점 27점 중 10점 이상으로 하여 우울증을 규정
+신체활동:본 연구에서 노인의 우울증에 영향을 미치는 신체활동 영역은 장소 이동 신체활동으로 확인되었다 여가활동 실천은 많은 연구결과를 통해 우울증 발생을 줄인다는 것
+이 확인되고 있지만[7,17,28] 본 연구에서는 선행연구와 다르게 여가시
+간 신체활동이 우울증과 유의한 관련성이 없는 것으로 나타났다
+
+일반적특성: 결혼상태, 가구월수입, 스트레스, 만성질환수가 우울증에 영향을 미치는 유의한 요인으로 나타났다.결혼상태가 유배우자에 비해 이혼 또는 사별 인 대상자의 우울증 위험이 높았으며, 가구월수입이 100-199만 원, 100 만 원 미만의 낮은 소득수준인 대상의 우울증 위험이 약 5.4배 정도로 크게 높았는데 기존 연구결과와 일치하였다 성별, 연령, 교육수준은 우울증과 유의한 관련이 없는 것으로 나타
+나 선행연구와 차이를 보였다. 흡연, 과도한 음주 등의 생활습관도 우
+울증과 관련이 있는 것으로 보고한 연구가 있는데, 본 연구에서도 일
+부 연구[7,34]에서처럼 유의한 관련이 없는 것으로 나타났다. 
+
+## 변수 List
+# 우울 변수
+BP5: 2주이상 연속 우울감여부
+
+# 요인변수
+X_dg:X는 질병 이름, _dg는 의사진단 여부  
+
+질병변수
+DI1: 고혈압, DI2: 이상지질혈증 , DI3: 뇌졸증 , DI4: 심근경색근 또는 현심증, DI5: 심근경색증, DI6: 협심증, DM1: 관절염, DM2: 골관절염, DM3: 류미티스성, DM4: 골다공증 , DJ2: 폐결핵 , DJ4: 천식 , DE2: 갑상선, DE1: 당뇨, DC1: 위암, DC2: 간암, DC3: 대장암, DC4: 유방암, DC5:자궁경부암, DC6: 폐암, DC7:갑상선암, DC11: 기타암, DL1:아토피피부염, DJ8: 알레르기비염, DJ6: 부비동염, DH4: 증이염, DN1: 콩팥병, DK8:b형간염, DK9: C형간염, DK4: 간경변증, DM8: 통풍, BP17:폐쇄성수면무호흡증, marri_2: 결혼상태 1:유배우자, 동거 2:유배우자, 별거 3:사별 4: 이혼
+
+BE3_91: 신체활동 여부:장소이동 1:예 2:아니오
+
+BS1_1: (성인)평생 일반담여 흡연여부 1: 5갑미만 2:5갑 이상 3:피운 적없음
+
+BD1_11: (만 12세 이상)1년간 음주빈도 1: 최근 1년간 전혀 마시지 않았다. 2: 월 1회미만 3: 월 1회 정도 4: 월 2~4회 5:주 2~3회 정도 6: 주4회 이상
+
+mh_stress: 스트레스 인지율 0: 스트레스 적게 느낌 1: 스트레스 많이 느낌
+
+
+
+## C-1 BP5 Method
+
+# Data Import
+```{r setup, echo= FALSE,warning=FALSE,message=FALSE}
+library(dplyr)
+library(tidyverse)
+library(haven)
+library(MASS)
+library(tidymodels)
+library(rsample)
+library(glmnet)
+library(boot)
+library(rpart)
+library(randomForest)
+library(tinytex)
+library(reshape2)
+library(yardstick)
+```
+
+
+# BP5 Dataset
+```{r, echo=FALSE}
+hn19<-read_sas("HN19_ALL.sas7bdat")
+
+hn19 %>% dplyr:: select(BP5) %>%  filter(BP5 <3) %>% table() %>% prop.table()
+df<-hn19 %>% dplyr::select(age,ends_with("_dg"), DF2_pr, marri_2, BE3_91, BS1_1, BD1_11, mh_stress)%>%
+  filter(age>=65)%>%
+  filter(BE3_91<3)%>%
+  mutate(BE3_91==1,1,0)%>%
+  filter(marri_2 %in% c(1,2,3,4))%>%
+  mutate(marri_2=ifelse(marri_2==1,0,1))%>%
+  filter(BE3_91<3)%>%
+  mutate(BE3_91=ifelse(BE3_91==2,0,1))%>%
+  filter(BD1_11<7)%>%
+  filter(BS1_1<6) %>% 
+  filter(DF2_pr<8)
+
+  
+factor_var= df %>% dplyr::select(-age)%>% colnames()
+
+
+
+df[factor_var] <- lapply(df[factor_var],as.factor)
+
+choose_nums= c(1,2)
+
+
+df=df%>% filter(if_any(ends_with("_dg"), ~. %in% choose_nums))
+
+#Temporarily setting factor variables as numeric to produce a correlation heat map
+df[factor_var] <- lapply(df[factor_var],as.numeric)
+cor(df$DM8_dg, df$DN1_dg)
+mydata= df %>% dplyr::select(BP5,marri_2, mh_stress, BE3_91, BS1_1, BD1_11, ends_with("_dg"))
+
+
+cormat <- round(cor(mydata),2)
+melted_cormat <- melt(cormat)
+melted_cormat=melted_cormat %>% filter(value> 0.05)
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()+
+  scale_fill_gradientn(colors = hcl.colors(20, "RdYlGn"))+
+  labs(x="", y="", title= "Correlation Heat Map of Variables")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.3, hjust=1))+
+  theme(axis.text.y = element_text(vjust = 0.3, hjust=1))
+
+
+# Revert variables back to factor
+df[factor_var] <- lapply(df[factor_var],as.factor)
+df<-df[complete.cases(df),]
+
+df
+
+```
+
+# AIC- Feature Selection
+
+```{r, , echo=FALSE, results= FALSE}
+AIC_BP5= glm(DF2_pr~age+ DI1_dg+ DI2_dg+ DI3_dg+ DI4_dg+ DI5_dg+ DI6_dg+ DM1_dg+ DM2_dg+ DM3_dg+ DM4_dg+ DJ2_dg+ DJ4_dg+ DE2_dg+ DE1_dg+ DC1_dg+ DC2_dg+ DC3_dg+ DC4_dg+ DC5_dg+ DC6_dg+ DC7_dg+ DC11_dg+ DL1_dg+ DJ8_dg+ DJ6_dg+ DH4_dg+ DN1_dg+ DK8_dg+ DK9_dg+ DK4_dg+ DM8_dg+ BP17_dg+ marri_2+ BE3_91+ BS1_1+ BD1_11+ mh_stress,data=df,family = "binomial")%>% stepAIC(direction= c("both"))
+```
+
+```{r, echo=FALSE}
+AIC_BP5$coefficients
+```
+
+Variables: DM1_dg + DM2_dg + DM3_dg + DM4_dg + DJ4_dg + DJ6_dg + DN1_dg + DM8_dg + marri_2 + mh_stress are used for our model
+
+# 최종 BP5 dataframe
+```{r, echo=FALSE}
+hn19 %>% glimpse()
+final_BP5= hn19  %>% filter(age>= 65) %>%
+  dplyr::select(BP5,DM1_dg , DM2_dg , DM3_dg , DM4_dg , DJ4_dg , DJ6_dg , DN1_dg , DM8_dg , marri_2 , mh_stress)%>%
+  filter(BP5<3)%>%
+  mutate(BP5=ifelse(BP5==1,1,0))%>%
+  filter(marri_2 %in% c(1,2,3,4))%>%
+  mutate(marri_2=ifelse(marri_2==1,0,1))
+
+final_var_BP5 = final_BP5 %>% colnames()
+
+final_BP5[final_var_BP5]<-lapply(final_BP5[final_var_BP5],as.factor)
+
+final_BP5=final_BP5%>% filter(if_any(ends_with("_dg"), ~. %in% choose_nums))
+
+final_BP5<-final_BP5[complete.cases(final_BP5),]
+
+final_BP5 %>%  glimpse()
+table(final_BP5$BP5) %>%  print() %>%  prop.table()#우울감 여부
+
+hn19_BP5= hn19$BP5 %>% table()
+hn19_BP5[1:2] %>%print() %>% prop.table()
+
+final_BP5
+
+```
+Note: Here, people classified as 2 are non-depressed people and 1 are depressed people. In the dataframe df, we renamed 2(non-depressed) group as '0'.
+As we can see both the original population and our dataset df have a class imbalance. To combat this, we will use PR curves and f_2_scores in the following analysis.
+
+# Formula
+```{r, echo=FALSE}
+
+form_BP5<-as.formula("BP5 ~ DM1_dg + DM2_dg + DM3_dg + DM4_dg + DJ4_dg + DJ6_dg + DN1_dg + DM8_dg + marri_2 + mh_stress")
+
+glm(form_BP5, data= final_BP5, family="binomial") %>% summary()
+cv.glm(final_BP5, glm.fit,K=10)$delta[1]
+
+
+
+
+fmod= glm(form_BP5, data= final_BP5, family="binomial")
+nmod= glm(form_BP5_0,data= final_BP5, family = 'binomial') 
+anova(nmod, fmod, test = 'Chisq')
+
+```
+
+# Training and testing data set
+```{r, echo=FALSE}
+set.seed(6969)
+
+ train_test_split <-
+     rsample::initial_split(
+         data = final_BP5,
+         prop = 0.80
+     )
+
+ train_BP5 <- train_test_split %>% training()
+ test_BP5<- train_test_split %>% testing()
+set.seed(1221)
+ validation_test_split <-
+     rsample::initial_split(
+         data = test_BP5,
+         prop = 0.5
+     ) 
+ test_BP5 <- validation_test_split %>% training()
+ test_BP5<- validation_test_split %>% testing()
+ 
+ 
+train_BP5 %>% dplyr::select(BP5)%>%  table() %>% print() %>% prop.table()
+test_BP5 %>% dplyr::select(BP5)%>%  table() %>% print() %>% prop.table()
+test_BP5 %>% dplyr::select(BP5)%>%  table() %>% print() %>% prop.table()
+test_BP5=test_BP5 %>% filter(ID!="L755303702")
+test_BP5 =test_BP5 %>% tail(139)
+
+library(glmnet)
+
+penalty= seq(0.01, 0.05, 0.01)
+
+for (i in penalty){
+mod_lasso <- logistic_reg(penalty = i, mixture = 1) %>%
+  set_engine("glmnet") %>%
+  fit(form_BP5, data = test_BP5)
+mod_lasso %>% tidy() %>% filter(estimate!=0) %>%  print()
+}
+
+
+form_BP5<-as.formula("BP5 ~ DM1_dg + DM2_dg + DM3_dg + DM4_dg + DJ4_dg + DJ6_dg + DN1_dg + DM8_dg + marri_2 + mh_stress+ DN1_dg*DM8_dg")
+form_BP5_0<-as.formula("BP5 ~ DM1_dg + DM2_dg + DM3_dg + DM4_dg + DJ4_dg + DJ6_dg + DN1_dg + DM8_dg + marri_2 + mh_stress")
+
+form_BP5_1<-as.formula("BP5 ~ DM1_dg  + DM3_dg + DM4_dg + DJ4_dg  + DN1_dg + DM8_dg + marri_2 + mh_stress")
+
+form_BP5_2<-as.formula("BP5 ~ DM1_dg  + DM3_dg + DM4_dg + DN1_dg + marri_2 + mh_stress")
+
+form_BP5<-as.formula("BP5 ~ DM3_dg + DN1_dg + DM8_dg + marri_2 + mh_stress")
+form_BP5_4<-as.formula("BP5 ~ DM3_dg + DN1_dg + DM8_dg + marri_2 + mh_stress+ DN1_dg*DM8_dg")
+form_BP5_5<-as.formula("BP5 ~ DM3_dg + DN1_dg + DM8_dg + marri_2 + mh_stress")
+form_BP5_6<-as.formula("BP5 ~ DM3_dg + DN1_dg + DM8_dg + marri_2 + mh_stress")
+
+
+glm.fit_0=glm(form_BP5_3, data= final_BP5,family = "binomial") 
+glm.fit_1=glm(form_BP5_4, data= final_BP5,family = "binomial") 
+anova(glm.fit_0,glm.fit_1 , test = 'Chisq')
+final_BP5 %>% dplyr::select(BP5) %>% table()
+cv.glm(test_BP5, glm.fit, K=10)$delta[1]
+
+for (i in 0:3){
+  glm.fit=glm(get(paste0("form_BP5_",i)), data= final_BP5,family = "binomial") 
+  cv.glm(test_BP5, glm.fit, K=10)$delta[1] %>% print()
+
+}
+
+
+```
+
+# BP5에 대한 로지스틱, tree, randomforest model 생성
+```{r, echo=FALSE}
+form_BP5<-as.formula("BP5 ~ DM1_dg + DM2_dg + DM3_dg + DM4_dg + DJ4_dg + DJ6_dg + DN1_dg  + marri_2 + mh_stress")
+mod_log_BP5 <- logistic_reg(mode = "classification") %>%
+  set_engine("glm") %>%
+  fit(form_BP5, data = train_BP5)
+
+
+mod_tree_BP5 <- decision_tree(mode = "classification") %>%
+  set_engine("rpart", control = rpart.control(cp = 0.005), minbucket= 30) %>%
+  fit(form_BP5, data = train_BP5)
+plot(as.party(mod_tree_BP5$fit))
+
+
+
+mod_forest_BP5 <- rand_forest(
+  mode = "classification",
+  mtry = 3,
+  trees = 201
+) %>%
+  set_engine("randomForest") %>%
+  fit(form_BP5, data = train_BP5)
+print(mod_forest_BP5$fit[5][1])
+
+
+
+
+as=randomForest::importance(mod_forest_BP5$fit) %>% 
+  as_tibble(rownames = "variable") %>%
+  arrange(desc(MeanDecreaseGini))
+  
+
+ggplot(as, aes(reorder(variable,MeanDecreaseGini), MeanDecreaseGini))+
+  geom_point()+
+  coord_flip()+
+  labs(y= "Mean Decrease Gini", x= "Variable", title= "Variable Importance in Random Forest Model")
+
+
+plot(as$variable, as$MeanDecreaseGini)  
+mod_forest_BP5$fit[5][1]
+
+
+ggplot(final_BP5, aes(x= mh_stress, y= DJ6_dg, color= BP5))+
+  geom_jitter()
+  
+
+
+```
+
+# 각 모델에 대한 Accuracy 및 Specifity test_BP5
+```{r, echo=FALSE}
+mods_BP5 <- tibble(
+  type = c("log", "tree", "forest"),
+  mod_BP5 = list(mod_log_BP5, mod_tree_BP5, mod_forest_BP5)
+)
+
+
+mods_BP5 <- mods_BP5 %>%
+  mutate(
+    y_train_BP5 = list(pull(train_BP5, BP5)),
+    y_test_BP5 = list(pull(test_BP5, BP5)),
+    y_hat_train_BP5 = map(
+      mod_BP5,
+      ~pull(predict(.x, new_data = train_BP5, type = "class"), .pred_class)
+    ),
+    y_hat_test_BP5 = map(
+      mod_BP5,
+      ~pull(predict(.x, new_data = test_BP5 , type = "class"), .pred_class)
+    )
+  )
+
+
+mods_BP5 <- mods_BP5 %>%
+  mutate(
+    accuracy_train_BP5 = map2_dbl(y_train_BP5, y_hat_train_BP5, accuracy_vec),
+    accuracy_test_BP5 = map2_dbl(y_test_BP5, y_hat_test_BP5, accuracy_vec),
+    sens_test_BP5 = map2_dbl(
+      y_test_BP5,
+      y_hat_test_BP5,
+      sens_vec,
+      event_level = "second"
+    ),
+    spec_test_BP5 = map2_dbl(y_test_BP5,
+                         y_hat_test_BP5,
+                         spec_vec,
+                         event_level = "second"
+    ),
+    prec_test_BP5 = map2_dbl(y_test_BP5,
+                         y_hat_test_BP5,
+                         precision_vec,
+                         event_level = "second"
+    )
+    ) %>% 
+  mutate(f1_statistic_test_BP5=(1+ 1.5) * prec_test_BP5*sens_test_BP5/(prec_test_BP5+sens_test_BP5))
+
+
+mods_BP5 %>% dplyr::select(type, accuracy_train_BP5, accuracy_test_BP5,sens_test_BP5,spec_test_BP5,prec_test_BP5,f1_statistic_test_BP5) %>% 
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+```
+
+# ROC
+```{r, echo=FALSE}
+mods_BP5 <- mods_BP5 %>%
+  mutate(
+    y_hat_prob_test_BP5 = map(
+      mod_BP5, 
+      ~pull(predict(.x, new_data = test_BP5, type = "prob"), .pred_1 )
+    ),
+    type = fct_reorder(type, sens_test_BP5, .desc = TRUE)
+  )
+
+mods_BP5 %>%
+  dplyr::select(type, y_test_BP5, y_hat_prob_test_BP5) %>%
+  unnest(cols = c(y_test_BP5, y_hat_prob_test_BP5)) %>%
+  group_by(type) %>%
+  roc_curve(truth = y_test_BP5, y_hat_prob_test_BP5, event_level = "second") %>%
+  autoplot() + 
+  geom_point(
+    data = mods_BP5, 
+    aes(x = 1 - spec_test_BP5, y = sens_test_BP5, color = type), 
+    size = 3
+  ) + 
+  scale_color_brewer("Model BP5", palette = "Set2")+
+  labs(y= "Sensitivity", x="1-Specificity", title ="ROC Curve")
+
+```
+
+```{r, echo=FALSE}
+mods_BP5 %>%
+  dplyr::select(type, y_test_BP5, y_hat_prob_test_BP5) %>%
+  unnest(cols = c(y_test_BP5, y_hat_prob_test_BP5)) %>%
+  group_by(type) %>%
+  roc_auc(truth = y_test_BP5, y_hat_prob_test_BP5, event_level = "second") %>% 
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+
+mods_BP5 %>%
+  dplyr::select(type, y_test_BP5, y_hat_prob_test_BP5) %>%
+  unnest(cols = c(y_test_BP5, y_hat_prob_test_BP5)) %>%
+  group_by(type) %>%
+  roc_curve(truth = y_test_BP5, y_hat_prob_test_BP5, event_level = "second") %>% 
+  mutate(balanced_accuracy= (sensitivity+ specificity)/2) %>% 
+  group_by(type) %>% 
+  top_n(1, balanced_accuracy) %>% 
+  mutate(across(where(is.numeric), ~ round(., 3)))
+```
+
+As we can see, the AUC under the ROC curves are all similar(logistic has the highest AUC of 0.736). However, as our dataset is imbalanced, we should use PR curves, instead. ROC doesn't care about the class imbalances and we care more about getting a true positive than a false negative; i.e It is more important to classify someone as depressed when . An algorithm that optimizes the ROC-AUC does not mean that it optimizes the PR-AUC. We will see this in our following PR curve.
+Reference: https://pages.cs.wisc.edu/~jdavis/davisgoadrichcamera2.pdf
+
+# Precision-Recall curve
+```{r, echo=FALSE}
+mods_BP5 <- mods_BP5 %>%
+  mutate(
+    y_hat_prob_test_BP5 = map(
+      mod_BP5, 
+      ~pull(predict(.x, new_data = test_BP5, type = "prob"), .pred_1 )
+    ),
+    type = fct_reorder(type, sens_test_BP5, .desc = TRUE)
+  )
+
+mods_BP5 %>%
+  dplyr::select(type, y_test_BP5, y_hat_prob_test_BP5) %>%
+  unnest(cols = c(y_test_BP5, y_hat_prob_test_BP5)) %>%
+  group_by(type) %>%
+  pr_curve(truth = y_test_BP5, y_hat_prob_test_BP5, event_level = "second") %>%
+  autoplot() + 
+  geom_point(
+    data = mods_BP5, 
+    aes(x = sens_test_BP5, y = prec_test_BP5, color = type), 
+    size = 3
+  ) + 
+  scale_color_brewer("Model BP5", palette = "Set2")+
+  geom_hline(yintercept=0.162, color="red")+
+  geom_text(x= 0.34, y= 0.133, label= "16.2% of people in the test dataset are depressed")+
+  labs(x="Recall", y="Precision", title= "Precision-Recall Curves")
+```
+
+# Precision-Recall Curve Area under the Curve
+```{r, echo=FALSE}
+mods_BP5 %>%
+  dplyr::select(type, y_test_BP5, y_hat_prob_test_BP5) %>%
+  unnest(cols = c(y_test_BP5, y_hat_prob_test_BP5)) %>%
+  group_by(type) %>%
+  pr_auc(truth = y_test_BP5, y_hat_prob_test_BP5, event_level = "second") %>% 
+  mutate(across(where(is.numeric), ~ round(., 3)))
+```
+
+Our test dataset had 18.6% depressed patients, so we have a random baseline at 0.18. In comparison, our decision tree, random forest, logistic models have a PR-AUC of 0.479, 0.311, and 0.443. The decision tree is our best model at maximizing true positives.
+
+# Finding the threshold to use
+
+$$
+\text{Balanced Accuracy}=\frac{\text{Sensitivity+Specificity}\{}} {\text{2}}
+$$
+
+$$
+\text{F-B-Measure}=(1+\beta^2)\times\frac{\text{Recall}\times\text{Precision}} {\text{Recall+Precision}}
+$$
+The F-score is better score than accuracy than accuracy for imbalanced data. We set the Beta value to 2, meaning that we put more weight on recall than precision (minimizes false negatives rather than false positives). i.e Prevents the model from misclassifying someone to not be depressed when they are depressed. 
+```{r, echo=FALSE}
+mods_BP5 %>%
+  dplyr::select(type, y_test_BP5, y_hat_prob_test_BP5) %>%
+  unnest(cols = c(y_test_BP5, y_hat_prob_test_BP5)) %>%
+  group_by(type) %>%
+  pr_curve(truth = y_test_BP5, y_hat_prob_test_BP5, event_level = "second") %>% 
+  mutate(f1.5_statistic=(1+1.5^2) * precision*recall/(precision+recall)) %>% 
+  group_by(type) %>% 
+  top_n(1, f1.5_statistic) %>% 
+  mutate(across(where(is.numeric), ~ round(., 3)))
+```
+
+
+
+```{r}
+mods_BP5 <- tibble(
+  type = c("log", "tree", "forest"),
+  mod_BP5 = list(mod_log_BP5, mod_tree_BP5, mod_forest_BP5)
+)
+
+
+mods_BP5 <- mods_BP5 %>%
+  mutate(
+    y_train_BP5 = list(pull(train_BP5, BP5)),
+    y_test_BP5 = list(pull(test_BP5, BP5)),
+    y_hat_train_BP5 = map(
+      mod_BP5,
+      ~pull(predict(.x, new_data = train_BP5, type = "class"))
+    ),
+    y_hat_test_BP5 = map(
+      mod_BP5,
+      ~pull(predict(.x, new_data = test_BP5, type = "class"))
+    ))
+
+
+b=predict(mod_log_BP5, new_data= test_BP5,type= "class") %>% 
+  bind_cols(test_BP5$BP5)
+b
+
+merge()
+
+a=predict(mod_log_BP5, new_data= test_BP5,type= "prob") %>% 
+  mutate(class= ifelse(.pred_1>= 0.383,1,0)) %>% 
+  bind_cols(test_BP5$BP5) %>% 
+  mutate(class= as.factor(class))
+
+
+table_lda=table(predicted= a$class, real= test_BP5$BP5)
+
+table_lda=table_lda %>% t()
+table_qda=table(predicted= b$.pred_class, real=test_BP5$BP5) %>% t() 
+
+sensitivity = function(table){(table[2,2])/(table[2,1]+table[2,2])}
+specificity = function(table){(table[1,1])/(table[1,1]+table[1,2])}
+specificity(table_lda)
+precision = function(table){(table[2,2])/(table[1,2]+table[2,2])}
+f1 = function(table){(1+1.5^2)*sensitivity(table)*precision(table)/(sensitivity(table)+precision(table))}
+f = function(table){(1+1.5)*sensitivity(table)*precision(table)/(sensitivity(table)+precision(table))}
+accuracy = function(table){(table[1,1]+table[2,2])/sum(table)}
+accuracy(table_lr)
+balanced_accuracy(sens)
+
+lol=data.frame(Cutoff_0.383= c(accuracy(table_lda),sensitivity(table_lda), specificity(table_lda), precision(table_lda), f1(table_lda), f(table_lda), ((sensitivity(table_lda)+specificity(table_lda))/2)), Original =c(accuracy(table_qda), sensitivity(table_qda), specificity(table_qda), precision(table_qda), f1(table_qda),f(table_lda),((sensitivity(table_qda)+specificity(table_qda))/2)))
+
+rownames(lol)= c("Accuracy","Sensitivity", "Specificity","Precision","F1.5-measure","F1-Measure","Balanced Accuracy")
+lol %>% mutate(across(where(is.numeric), ~ round(., 3)))
+
+```
+
+
+```{r}
+ae=hn19 %>% dplyr::select(BP5, DF2_pr) %>% 
+  filter(BP5<3) %>% 
+  filter(DF2_pr<3) %>% 
+  mutate(BP5= ifelse(BP5==1,1,0)) %>% 
+  mutate(BP5= as.factor(BP5),
+         DF2_pr = as.factor(DF2_pr))
+
+glm(BP5~DF2_pr,ae, family = "binomial")
+
+table(BP5= ae$BP5,DF2_pr= ae$DF2_pr)
+```
+
+```{r}
+hn19 = read_sas("HN18_ALL.sas7bdat")
+
+```
+
